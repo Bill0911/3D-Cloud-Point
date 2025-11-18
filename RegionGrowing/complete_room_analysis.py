@@ -1,22 +1,3 @@
-#!/usr/bin/env python3
-"""
-Complete Room Analysis Pipeline
-
-Executes all three steps:
-1. Classification of walls, floors, and ceilings (region growing)
-2. Segmentation of rooms based on ceiling layout
-3. Calculation of room areas and generation of 2D map
-
-Usage:
-    python complete_room_analysis.py input.laz output_folder [options]
-
-Output files in output_folder:
-    - classified.las: Classified point cloud
-    - segmented.las: Point cloud with room_id per room
-    - room_map.png: 2D map with room labels and areas
-    - room_areas.csv: CSV with room areas
-"""
-
 import argparse
 import os
 import sys
@@ -33,6 +14,7 @@ import matplotlib.pyplot as plt
 import csv
 import json
 from shapely.geometry import MultiPoint
+from scipy.ndimage import binary_closing, label
 
 
 # ============================================================================
@@ -70,7 +52,6 @@ def region_growing(points, normals, kd_tree, seed_idx, visited,
 
 
 def classify_region(points_in_region, normals_in_region, z_stats):
-    """Classify a region as wall, floor, or ceiling."""
     mean_normal = np.mean(normals_in_region, axis=0)
     mean_normal = mean_normal / np.linalg.norm(mean_normal)
     
@@ -93,9 +74,8 @@ def classify_region(points_in_region, normals_in_region, z_stats):
 def step1_classify(input_file, output_file, voxel_size=0.02,
                    normal_threshold=0.9, distance_threshold=0.1,
                    min_region_size=1500):
-    """STEP 1: Classify point cloud using region growing."""
     print("\n" + "="*70)
-    print("STEP 1: CLASSIFICATION (Region Growing)")
+    print("CHECKPOINT 1: CLASSIFICATION (Region Growing)")
     print("="*70)
     
     print("Reading point cloud...")
@@ -194,9 +174,8 @@ def step1_classify(input_file, output_file, voxel_size=0.02,
 
 def step2_segment_rooms(input_file, output_file, grid_size=0.01, 
                         dilation_iterations=3, min_room_points=5000):
-    """STEP 2: Segment rooms based on ceiling layout."""
     print("\n" + "="*70)
-    print("STEP 2: ROOM SEGMENTATION")
+    print("CHECKPOINT 2: ROOM SEGMENTATION")
     print("="*70)
     
     print(f"Reading classified point cloud from {input_file}...")
@@ -208,7 +187,10 @@ def step2_segment_rooms(input_file, output_file, grid_size=0.01,
     wall_mask = classification == 6
     ceiling_mask = classification == 7
 
-    wall_points = points[wall_mask]
+    z_min_wall_height = 1.5
+    high_wall_mask = wall_mask & (points[:, 2] > z_min_wall_height)
+
+    wall_points = points[high_wall_mask]
     ceiling_points = points[ceiling_mask]
     
     if len(wall_points) == 0 or len(ceiling_points) == 0:
@@ -257,9 +239,7 @@ def step2_segment_rooms(input_file, output_file, grid_size=0.01,
     for original_id, final_id in final_room_id_map.items():
         final_point_labels[point_room_labels == original_id] = final_id
 
-    print("Applying manual merge: Merging Room 4 (Kitchen) into Room 3 (Living Room)...")
-    mask_room_4 = (final_point_labels == 4)
-    final_point_labels[mask_room_4] = 3
+    
 
     print(f"\nFound {valid_rooms} valid rooms.")
 
@@ -355,7 +335,6 @@ def get_room_ids_from_las(las):
 
 
 def compute_room_areas(points_xy, room_ids, grid_size):
-    """Compute area for each room."""
     x = points_xy[:, 0]
     y = points_xy[:, 1]
     x_min, y_min = np.min(points_xy, axis=0)
@@ -401,7 +380,6 @@ def compute_room_areas(points_xy, room_ids, grid_size):
 
 
 def save_csv(room_stats, csv_path):
-    """Save room areas to CSV."""
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["room_id", "pixel_count", "area_m2"])
@@ -410,7 +388,6 @@ def save_csv(room_stats, csv_path):
 
 
 def plot_map(grid, bounds, room_stats, output_image, cmap_name="tab20"):
-    """Plot room map with areas."""
     x_min, y_min, x_max, y_max = bounds
     extent = (x_min, x_max, y_min, y_max)
 
@@ -459,9 +436,8 @@ def plot_map(grid, bounds, room_stats, output_image, cmap_name="tab20"):
 
 
 def step3_measure_rooms(input_file, output_image, csv_path, json_path, grid_size=0.05):
-    """STEP 3: Calculate room areas and generate map."""
     print("\n" + "="*70)
-    print("STEP 3: ROOM AREA CALCULATION & MAP GENERATION")
+    print("CHECKPOINT 3: ROOM AREA CALCULATION & MAP GENERATION")
     print("="*70)
     
     print(f"Reading {input_file}...")
@@ -578,14 +554,14 @@ Output files:
     
     try:
         # Classification
-        """ step1_classify(
+        step1_classify(
             args.input,
             str(classified_file),
             voxel_size=args.voxel,
             normal_threshold=args.normal_threshold,
             distance_threshold=args.distance_threshold,
             min_region_size=args.min_region_size
-        ) """
+        )
 
         print("Skipping Step 1 (using existing classified.las)...")
 
