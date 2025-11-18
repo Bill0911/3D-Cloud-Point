@@ -40,16 +40,20 @@ from shapely.geometry import MultiPoint
 # ============================================================================
 
 def region_growing(points, normals, kd_tree, seed_idx, visited, 
-                   normal_threshold=0.9, distance_threshold=0.1, min_region_size=1200):
+                   normal_threshold=0.9, distance_threshold=0.1, min_region_size=1200, max_z_diff=None):
     """Perform region growing from a seed point."""
     region = []
     queue = deque([seed_idx])
     visited[seed_idx] = True
-    seed_normal = normals[seed_idx]
+
+    # seed_normal = normals[seed_idx]
     
     while queue:
         current_idx = queue.popleft()
         region.append(current_idx)
+
+        current_point = points[current_idx];
+        current_normal = normals[current_idx];
         
         neighbor_indices = kd_tree.query_radius(
             points[current_idx].reshape(1, -1), 
@@ -59,9 +63,13 @@ def region_growing(points, normals, kd_tree, seed_idx, visited,
         for neighbor_idx in neighbor_indices:
             if visited[neighbor_idx]:
                 continue
-            
-            dot_product = np.dot(normals[neighbor_idx], seed_normal)
-            
+
+            if max_z_diff is not None:
+                if abs(points[neighbor_idx, 2] - current_point[2]) > max_z_diff:
+                    continue
+
+            dot_product = np.dot(normals[neighbor_idx], current_normal)
+
             if dot_product > normal_threshold:
                 visited[neighbor_idx] = True
                 queue.append(neighbor_idx)
@@ -90,15 +98,21 @@ def classify_region(points_in_region, normals_in_region, z_stats):
         return 1 
 
 
-def step1_classify(input_file, output_file, voxel_size=0.02,
-                   normal_threshold=0.9, distance_threshold=0.1,
-                   min_region_size=1500):
-    """STEP 1: Classify point cloud using region growing."""
-    print("\n" + "="*70)
+def step1_classify(input_file,
+                   output_file,
+                   voxel_size=0.02,
+                   normal_threshold=0.9,
+                   distance_threshold=0.1,
+                   min_region_size=1500,
+                   floor_pct=5.0,
+                   ceil_pct=95.0,
+                   max_z_diff=None):
+
+    print("\n" + "=" * 70)
     print("STEP 1: CLASSIFICATION (Region Growing)")
-    print("="*70)
-    
-    print("Reading point cloud...")
+    print("=" * 70)
+
+    print(f"Reading point cloud from {input_file}...")
     las = laspy.read(input_file)
     points = np.vstack((las.x, las.y, las.z)).T
     print(f"Original points: {len(points)}")
@@ -110,83 +124,127 @@ def step1_classify(input_file, output_file, voxel_size=0.02,
     points_down = np.asarray(pcd.points)
     print(f"Points after downsampling: {len(points_down)}")
 
-    print("Estimating normals...")
-    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(knn=20))
+    if len(points_down) == 0:
+        raise RuntimeError("Downsampling produced 0 points. Check voxel_size.")
+
+    print("Estimating normals on downsampled cloud...")
+    pcd.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamKNN(knn=20)
+    )
     pcd.orient_normals_consistent_tangent_plane(k=20)
     normals = np.asarray(pcd.normals)
 
-    print("Building KD-Tree...")
+    print("Building KD-tree...")
     kd_tree = KDTree(points_down)
 
-    print("Performing region growing classification...")
-    classification = np.ones(len(points_down), dtype=np.uint8)
-    visited = np.zeros(len(points_down), dtype=bool)
-    
-    z_min = np.min(points_down[:, 2])
-    z_max = np.max(points_down[:, 2])
+    z_vals = points_down[:, 2]
+    z_min = float(np.min(z_vals))
+    z_max = float(np.max(z_vals))
+    z_floor = float(np.percentile(z_vals, floor_pct))
+    z_ceil = float(np.percentile(z_vals, ceil_pct))
     z_range = z_max - z_min
-    
+
+    # Margins inside floor/ceiling bands (10% of span between percentiles)
+    span = max(z_ceil - z_floor, 1e-6)
+    floor_margin = 0.10 * span
+    ceil_margin = 0.10 * span
+
     z_stats = {
-        'min': z_min,
-        'max': z_max,
-        'range': z_range,
-        'threshold_floor': z_min + 0.35 * z_range,
-        'threshold_ceiling': z_max - 0.35 * z_range
+        "min": z_min,
+        "max": z_max,
+        "range": z_range,
+        "floor_z": z_floor,
+        "ceiling_z": z_ceil,
+        "threshold_floor": z_floor + floor_margin,
+        "threshold_ceiling": z_ceil - ceil_margin,
     }
-    
-    print(f"Z-range: {z_min:.2f}m to {z_max:.2f}m")
-    print(f"Floor threshold: < {z_stats['threshold_floor']:.2f}m")
-    print(f"Ceiling threshold: > {z_stats['threshold_ceiling']:.2f}m")
-    
-    regions_found = 0
-    points_classified = 0
-    
+
+    print(f"Z-range: {z_min:.3f} m to {z_max:.3f} m")
+    print(f"Estimated floor (p{floor_pct:.1f}):   {z_floor:.3f} m")
+    print(f"Estimated ceiling (p{ceil_pct:.1f}): {z_ceil:.3f} m")
+    print(f"Floor threshold:   < {z_stats['threshold_floor']:.3f} m")
+    print(f"Ceiling threshold: > {z_stats['threshold_ceiling']:.3f} m")
+
+    print("Performing region growing classification...")
+    classification = np.ones(len(points_down), dtype=np.uint8)  # default: unclassified
+    visited = np.zeros(len(points_down), dtype=bool)
+
+    # Seeds ordered to prefer very vertical OR very horizontal surfaces first
     normal_z_abs = np.abs(normals[:, 2])
     seed_order = np.argsort(-np.maximum(normal_z_abs, 1 - normal_z_abs))
-    
+
+    regions_found = 0
+    points_classified = 0
+
     for seed_idx in seed_order:
         if visited[seed_idx]:
             continue
-        
+
         region_indices = region_growing(
-            points_down, normals, kd_tree, seed_idx, visited,
+            points_down,
+            normals,
+            kd_tree,
+            seed_idx,
+            visited,
             normal_threshold=normal_threshold,
             distance_threshold=distance_threshold,
-            min_region_size=min_region_size
+            min_region_size=min_region_size,
+            max_z_diff=max_z_diff,
         )
-        
-        if len(region_indices) > 0:
-            region_points = points_down[region_indices]
-            region_normals = normals[region_indices]
-            region_class = classify_region(region_points, region_normals, z_stats)
-            
-            classification[region_indices] = region_class
-            
-            regions_found += 1
-            points_classified += len(region_indices)
-            
-            if regions_found % 10 == 0:
-                print(f"  Regions found: {regions_found}, Points classified: {points_classified}/{len(points_down)}")
+
+        if not region_indices:
+            continue
+
+        region_points = points_down[region_indices]
+        region_normals = normals[region_indices]
+        region_class = classify_region(region_points, region_normals, z_stats)
+
+        classification[region_indices] = region_class
+
+        regions_found += 1
+        points_classified += len(region_indices)
+
+        if regions_found % 10 == 0:
+            print(
+                f"  Regions found: {regions_found}, "
+                f"Points classified: {points_classified}/{len(points_down)}"
+            )
 
     print(f"\nTotal regions found: {regions_found}")
     print(f"Points classified: {points_classified}/{len(points_down)}")
-    
+
     unique, counts = np.unique(classification, return_counts=True)
     class_names = {1: "Unclassified", 2: "Floor", 6: "Wall", 7: "Ceiling"}
-    print("\nClassification statistics:")
-    for cls, count in zip(unique, counts):
-        print(f"  {class_names.get(cls, f'Class {cls}')}: {count} points ({100*count/len(classification):.1f}%)")
 
-    print(f"Saving classified point cloud to {output_file}...")
-    header = laspy.LasHeader(point_format=3, version="1.2")
-    out = laspy.LasData(header)
+    print("\nClassification statistics (downsampled):")
+    for cls, count in zip(unique, counts):
+        name = class_names.get(cls, f"Class {cls}")
+        pct = 100.0 * count / len(classification)
+        print(f"  {name:12s}: {count:7d} points ({pct:5.1f}%)")
+
+    print(f"\nSaving classified point cloud to {output_file}...")
+
+    # Clone original header instead of creating a blank one
+    out_header = las.header.copy()
+    out = laspy.LasData(out_header)
+
+    # Use downsampled coordinates
     out.x = points_down[:, 0]
     out.y = points_down[:, 1]
     out.z = points_down[:, 2]
-    out.classification = classification
-    out.write(output_file)
-    print(f"✓ Saved {len(points_down)} classified points")
 
+    # Ensure classification dimension exists and assign
+    if "classification" in out.point_format.dimension_names:
+        out.classification = classification
+    else:
+        # Fallback: add classification as required extra byte
+        raise RuntimeError(
+            "Output point format has no 'classification' dimension; "
+            "adjust point_format or add an extra dimension here."
+        )
+
+    out.write(output_file)
+    print(f"✓ Saved {len(points_down)} classified points\n")
 
 # ============================================================================
 # Room Segmentation
