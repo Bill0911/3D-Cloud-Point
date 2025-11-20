@@ -1,0 +1,11 @@
+{
+    "file": "C:/Users/dober/Downloads/emit-it_appartement_sor_noise_filtered-laz_2025-11-11_1332/appartement.las",
+    "service_area_m2": 113.75,
+    "plane_equation": [
+        0.00025316759367029787,
+        -0.001499750043685776,
+        0.999998843327319,
+        -2.2702515298529478
+    ],
+    "floor_z_estimate": -0.12753236978886573
+}
