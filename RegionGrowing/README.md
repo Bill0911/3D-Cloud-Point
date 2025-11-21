@@ -2,13 +2,13 @@
 
 Advanced point cloud segmentation and room analysis system with multiple implementation approaches. Choose the script that best fits your needs:
 
-1. **`complete_room_analysis_octree.py`** - Octree-based with research paper enhancements (best accuracy, slower)
+1. **`complete_room_analysis_octree.py`** - Octree-based with research paper enhancements (best accuracy, slower) - DEFECTED AND REMOVED
 2. **`complete_room_analysis_hybrid.py`** - Hybrid approach (Octree → Point-based → RANSAC) (balanced speed/accuracy)
 3. **`complete_room_analysis_advanced.py`** - Full-featured advanced version (attachment detection, door frames, room classification)
 
 ## Features Overview
 
-### Octree Script (complete_room_analysis_octree.py)
+### Octree Script (complete_room_analysis_octree.py) - DEFECTED AND REMOVED
 - **Two-Phase Segmentation**: Coarse voxel-based segmentation followed by refinement
 - **Curvature-Based Seed Selection**: Uses Gaussian and mean curvature for optimal seed point selection
 - **Adaptive Octree**: Residual-based adaptive voxelization for multi-scale representation
@@ -47,39 +47,7 @@ py -3.11 -m pip install open3d scikit-learn laspy lazrs matplotlib shapely scipy
 
 ## Usage
 
-### Script 1: Octree-Based (complete_room_analysis_octree.py)
-
-**Best for**: Maximum accuracy, research work, large buildings with complex geometries
-
-#### Basic Usage
-```bash
-py -3.11 RegionGrowing\complete_room_analysis_octree.py input.las output_folder
-```
-
-#### Recommended for Apartments
-```bash
-py -3.11 RegionGrowing\complete_room_analysis_octree.py appartement.las output_octree \
-    --voxel 0.015 \
-    --max-depth 10 \
-    --residual-threshold 0.04 \
-    --curvature-threshold 0.08 \
-    --angle-threshold 9.0 \
-    --min-room-points 5000 \
-    --filter-outliers \
-    --improve-boundaries
-```
-
-#### High-Density Point Cloud
-```bash
-py -3.11 RegionGrowing\complete_room_analysis_octree.py input.las output \
-    --voxel 0.01 \
-    --max-depth 11 \
-    --residual-threshold 0.03 \
-    --curvature-threshold 0.06 \
-    --angle-threshold 8.0
-```
-
-### Script 2: Hybrid (complete_room_analysis_hybrid.py)
+### Script 1: Hybrid (complete_room_analysis_hybrid.py)
 
 **Best for**: Balanced speed and accuracy, faster processing than octree-only
 
@@ -117,7 +85,7 @@ py -3.11 RegionGrowing\complete_room_analysis_hybrid.py input.las output \
     --no-ransac
 ```
 
-### Script 3: Advanced (complete_room_analysis_advanced.py)
+### Script 2: Advanced (complete_room_analysis_advanced.py)
 
 **Best for**: Production use, room classification needed, objects attached to walls
 
@@ -168,7 +136,7 @@ py -3.11 RegionGrowing\complete_room_analysis_advanced.py input.las output \
 
 ### When to Use Which Script
 
-- **Use Octree Script** (`complete_room_analysis_octree.py`):
+- **Use Octree Script** (`complete_room_analysis_octree.py`)- DEFECTED AND REMOVED
   - You need maximum accuracy
   - You're doing research/comparison
   - You don't need room type classification
@@ -299,15 +267,6 @@ All scripts generate the following files in the output folder:
 
 ### Small Apartment (< 100 m²)
 
-**Octree Script:**
-```bash
-py -3.11 RegionGrowing\complete_room_analysis_octree.py apartment.las output \
-    --voxel 0.01 \
-    --max-depth 10 \
-    --min-room-points 3000 \
-    --curvature-threshold 0.08
-```
-
 **Hybrid Script (Faster):**
 ```bash
 py -3.11 RegionGrowing\complete_room_analysis_hybrid.py apartment.las output \
@@ -326,18 +285,6 @@ py -3.11 RegionGrowing\complete_room_analysis_advanced.py apartment.las output \
 ```
 
 ### Large Building (> 500 m²)
-
-**Octree Script:**
-```bash
-py -3.11 RegionGrowing\complete_room_analysis_octree.py building.las output \
-    --voxel 0.02 \
-    --max-depth 9 \
-    --min-room-points 8000 \
-    --residual-threshold 0.06 \
-    --curvature-threshold 0.12 \
-    --filter-outliers \
-    --improve-boundaries
-```
 
 **Hybrid Script:**
 ```bash
@@ -388,15 +335,6 @@ py -3.11 RegionGrowing\complete_room_analysis_advanced.py dense_cloud.las output
 ```
 
 ### Sparse Point Cloud (< 100K points)
-
-**Octree Script:**
-```bash
-py -3.11 RegionGrowing\complete_room_analysis_octree.py sparse_cloud.las output \
-    --voxel 0.03 \
-    --max-depth 8 \
-    --min-room-points 2000 \
-    --curvature-threshold 0.15
-```
 
 **Hybrid Script:**
 ```bash
@@ -451,7 +389,7 @@ py -3.11 RegionGrowing\complete_room_analysis_advanced.py sparse_cloud.las outpu
 
 ### Typical Processing Times (Intel i7, 16GB RAM)
 
-**Octree Script (complete_room_analysis_octree.py):**
+**Octree Script (complete_room_analysis_octree.py):** - DEFECTED AND REMOVED
 - Small apartment (100K points): 10-30 minutes
 - Medium building (500K points): 30-90 minutes
 - Large building (2M+ points): **2-12+ hours** ⚠️
@@ -529,12 +467,6 @@ py -3.11 RegionGrowing\complete_room_analysis_hybrid.py appartement.las output \
     --voxel 0.015 --octree-max-depth 8 --min-room-points 5000
 ```
 
-**Maximum Accuracy (If you have time):**
-```bash
-py -3.11 RegionGrowing\complete_room_analysis_octree.py appartement.las output \
-    --voxel 0.015 --max-depth 10 --residual-threshold 0.04 --curvature-threshold 0.08
-```
-
 **Full Features (Room classification needed):**
 ```bash
 py -3.11 RegionGrowing\complete_room_analysis_advanced.py appartement.las output \
@@ -543,7 +475,7 @@ py -3.11 RegionGrowing\complete_room_analysis_advanced.py appartement.las output
 
 ### Script Names
 
-1. **`complete_room_analysis_octree.py`** - Octree-based (research, max accuracy)
+1. **`complete_room_analysis_octree.py`** - Octree-based (research, max accuracy) - DEFECTED AND REMOVED
 2. **`complete_room_analysis_hybrid.py`** - Hybrid approach (balanced, recommended)
 3. **`complete_room_analysis_advanced.py`** - Advanced features (production, classification)
 
