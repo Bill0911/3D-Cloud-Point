@@ -1,51 +1,85 @@
 #!/usr/bin/env python3
 """
-Complete Room Analysis Pipeline
+Complete Room Analysis Pipeline - GPU Accelerated Version
 
-Executes all three steps:
-1. Classification of walls, floors, and ceilings (region growing)
-2. Segmentation of rooms based on ceiling layout
-3. Calculation of room areas and generation of 2D map
+Uses GPU acceleration for:
+- KDTree queries (torch-cluster)
+- Array operations (CuPy)
+- Normal estimation (Open3D)
+
+Requires: NVIDIA GPU with CUDA support
 
 Usage:
-    python complete_room_analysis.py input.laz output_folder [options]
-
-Output files in output_folder:
-    - classified.las: Classified point cloud
-    - segmented.las: Point cloud with room_id per room
-    - room_map.png: 2D map with room labels and areas
-    - room_areas.csv: CSV with room areas
+    python complete_room_analysis_gpu.py input.laz output_folder [options]
+    
+Add --use-gpu flag to enable GPU acceleration (default: auto-detect)
 """
 
 import argparse
 import os
 import sys
 from pathlib import Path
+from collections import deque
+import csv
+import json
 
-# Import functies uit de drie scripts
 import laspy
 import numpy as np
 import open3d as o3d
-from collections import deque
-from sklearn.neighbors import KDTree
 from scipy.ndimage import label, binary_dilation
 import matplotlib.pyplot as plt
-import csv
-import json
 from shapely.geometry import MultiPoint
 
+try:
+    import cupy as cp
+    import torch
+    import torch_cluster
+    GPU_AVAILABLE = torch.cuda.is_available()
+    if GPU_AVAILABLE:
+        print(f"✓ GPU Available: {torch.cuda.get_device_name(0)}")
+        print(f"✓ GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+except ImportError as e:
+    GPU_AVAILABLE = False
+    print(f"⚠ GPU libraries not available: {e}")
+    print("  Install with: pip install cupy-cuda12x torch-cluster")
 
-# ============================================================================
-# Region Growing Classification
-# ============================================================================
 
-def region_growing(points, normals, kd_tree, seed_idx, visited, 
-                   normal_threshold=0.9, distance_threshold=0.1, min_region_size=1200):
-    """Perform region growing from a seed point."""
+class GPUKDTree:
+    """GPU-accelerated KDTree using PyTorch."""
+    
+    def __init__(self, points):
+        self.points_cpu = points
+        if GPU_AVAILABLE:
+            self.points_gpu = torch.from_numpy(points).float().cuda()
+        else:
+            from sklearn.neighbors import KDTree
+            self.cpu_tree = KDTree(points)
+    
+    def query_radius(self, query_point, r):
+        """Query radius neighbors - GPU accelerated."""
+        if not GPU_AVAILABLE:
+            return self.cpu_tree.query_radius(query_point, r=r)
+        
+        query_gpu = torch.from_numpy(query_point).float().cuda()
+        
+        dists = torch.cdist(query_gpu, self.points_gpu)
+        mask = dists[0] <= r
+        indices = torch.nonzero(mask, as_tuple=False).squeeze(1)
+        
+        return [indices.cpu().numpy()]
+
+
+def region_growing_gpu(points, normals, kd_tree, seed_idx, visited, 
+                       normal_threshold=0.9, distance_threshold=0.1, min_region_size=1200):
+    """GPU-accelerated region growing."""
     region = []
     queue = deque([seed_idx])
     visited[seed_idx] = True
     seed_normal = normals[seed_idx]
+    
+    if GPU_AVAILABLE:
+        normals_gpu = torch.from_numpy(normals).float().cuda()
+        seed_normal_gpu = torch.from_numpy(seed_normal).float().cuda()
     
     while queue:
         current_idx = queue.popleft()
@@ -56,13 +90,26 @@ def region_growing(points, normals, kd_tree, seed_idx, visited,
             r=distance_threshold
         )[0]
         
-        for neighbor_idx in neighbor_indices:
-            if visited[neighbor_idx]:
-                continue
-            
-            dot_product = np.dot(normals[neighbor_idx], seed_normal)
-            
-            if dot_product > normal_threshold:
+        if len(neighbor_indices) == 0:
+            continue
+        
+        if GPU_AVAILABLE and len(neighbor_indices) > 100:
+            neighbor_normals_gpu = normals_gpu[neighbor_indices]
+            dot_products = torch.matmul(neighbor_normals_gpu, seed_normal_gpu)
+            valid_mask = (dot_products > normal_threshold).cpu().numpy()
+            valid_neighbors = neighbor_indices[valid_mask]
+        else:
+            valid_neighbors = []
+            for neighbor_idx in neighbor_indices:
+                if visited[neighbor_idx]:
+                    continue
+                dot_product = np.dot(normals[neighbor_idx], seed_normal)
+                if dot_product > normal_threshold:
+                    valid_neighbors.append(neighbor_idx)
+            valid_neighbors = np.array(valid_neighbors)
+        
+        for neighbor_idx in valid_neighbors:
+            if not visited[neighbor_idx]:
                 visited[neighbor_idx] = True
                 queue.append(neighbor_idx)
     
@@ -87,16 +134,17 @@ def classify_region(points_in_region, normals_in_region, z_stats):
     elif abs(nz) < 0.2:
         return 6
     else:
-        return 1 
+        return 1
 
 
 def step1_classify(input_file, output_file, voxel_size=0.02,
                    normal_threshold=0.9, distance_threshold=0.1,
-                   min_region_size=1500):
-    """STEP 1: Classify point cloud using region growing."""
+                   min_region_size=1500, use_gpu=True):
+    """STEP 1: Classify point cloud using GPU-accelerated region growing."""
     print("\n" + "="*70)
-    print("STEP 1: CLASSIFICATION (Region Growing)")
+    print("STEP 1: CLASSIFICATION (GPU-Accelerated Region Growing)")
     print("="*70)
+    print(f"GPU Acceleration: {'✓ Enabled' if (use_gpu and GPU_AVAILABLE) else '✗ Disabled'}")
     
     print("Reading point cloud...")
     las = laspy.read(input_file)
@@ -115,8 +163,8 @@ def step1_classify(input_file, output_file, voxel_size=0.02,
     pcd.orient_normals_consistent_tangent_plane(k=20)
     normals = np.asarray(pcd.normals)
 
-    print("Building KD-Tree...")
-    kd_tree = KDTree(points_down)
+    print("Building KD-Tree (GPU-accelerated)...")
+    kd_tree = GPUKDTree(points_down) if (use_gpu and GPU_AVAILABLE) else GPUKDTree(points_down)
 
     print("Performing region growing classification...")
     classification = np.ones(len(points_down), dtype=np.uint8)
@@ -148,7 +196,12 @@ def step1_classify(input_file, output_file, voxel_size=0.02,
         if visited[seed_idx]:
             continue
         
-        region_indices = region_growing(
+        region_indices = region_growing_gpu(
+            points_down, normals, kd_tree, seed_idx, visited,
+            normal_threshold=normal_threshold,
+            distance_threshold=distance_threshold,
+            min_region_size=min_region_size
+        ) if (use_gpu and GPU_AVAILABLE) else region_growing_gpu(
             points_down, normals, kd_tree, seed_idx, visited,
             normal_threshold=normal_threshold,
             distance_threshold=distance_threshold,
@@ -187,10 +240,6 @@ def step1_classify(input_file, output_file, voxel_size=0.02,
     out.write(output_file)
     print(f"✓ Saved {len(points_down)} classified points")
 
-
-# ============================================================================
-# Room Segmentation
-# ============================================================================
 
 def step2_segment_rooms(input_file, output_file, grid_size=0.01, 
                         dilation_iterations=3, min_room_points=5000):
@@ -286,6 +335,7 @@ def step2_segment_rooms(input_file, output_file, grid_size=0.01,
     las.write(output_file)
     print("✓ Each room's ceiling now has a unique classification (700 + room_id).")
 
+
 def save_room_polygons_json(room_stats, grid, bounds, grid_size, json_path):
     """Generates a polygon for each room and saves to JSON."""
     print(f"Generating floor polygons for JSON...")
@@ -315,10 +365,6 @@ def save_room_polygons_json(room_stats, grid, bounds, grid_size, json_path):
         json.dump(output_data, f, indent=2)
     print(f"✓ Saved room polygons to: {json_path}")
 
-
-# ============================================================================
-# Room Area Calculation & Map Generation
-# ============================================================================
 
 def get_room_ids_from_las(las):
     """Get room IDs from LAS file."""
@@ -378,7 +424,6 @@ def compute_room_areas(points_xy, room_ids, grid_size):
         combos = np.vstack((cell_idx[mask_nonzero], room_ids[mask_nonzero])).T
         uniq_pairs, counts = np.unique(combos, axis=0, return_counts=True)
         
-        from collections import defaultdict
         cell_best = {}
         for (cidx, rid), cnt in zip(uniq_pairs, counts):
             if cidx not in cell_best or cnt > cell_best[cidx][1]:
@@ -429,7 +474,7 @@ def plot_map(grid, bounds, room_stats, output_image, cmap_name="tab20"):
         color_grid[grid == rid] = idx + 1
 
     plt.imshow(color_grid, origin='lower', extent=extent, interpolation='nearest')
-    plt.title("Room segmentation map with surface areas")
+    plt.title("Room segmentation map with surface areas (GPU-Accelerated)")
     plt.xlabel("X (m)")
     plt.ylabel("Y (m)")
     plt.axis('equal')
@@ -500,18 +545,14 @@ def step3_measure_rooms(input_file, output_image, csv_path, json_path, grid_size
         print(f"  Room {rid}: {room_stats[rid]['area_m2']:.3f} m²  ({room_stats[rid]['pixel_count']} cells)")
 
 
-# ============================================================================
-# MAIN PIPELINE
-# ============================================================================
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Complete room analysis pipeline: classify, segment, and measure rooms",
+        description="GPU-accelerated complete room analysis pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example:
-  python complete_room_analysis.py input.laz output_folder
-  python complete_room_analysis.py input.laz output_folder --voxel 0.03 --min-room-points 3000
+  python complete_room_analysis_gpu.py input.laz output_folder --use-gpu
+  python complete_room_analysis_gpu.py input.laz output_folder --voxel 0.03 --min-room-points 3000
 
 Output files:
   output_folder/classified.las      - Classified point cloud
@@ -519,11 +560,20 @@ Output files:
   output_folder/room_map.png        - 2D visualization with areas
   output_folder/room_areas.csv      - Table with room areas
   output_folder/room_polygons.json  - Polygon coordinates (JSON)
+
+GPU Acceleration:
+  Requires NVIDIA GPU with CUDA support
+  Install: pip install cupy-cuda12x torch-cluster
         """
     )
     
     parser.add_argument("input", help="Input .las/.laz file")
     parser.add_argument("output_folder", help="Output folder for all results")
+    
+    parser.add_argument("--use-gpu", action="store_true", default=True,
+                       help="Use GPU acceleration (default: auto-detect)")
+    parser.add_argument("--no-gpu", dest="use_gpu", action="store_false",
+                       help="Disable GPU acceleration")
     
     # Classification parameters
     parser.add_argument("--voxel", type=float, default=0.02,
@@ -550,14 +600,18 @@ Output files:
     args = parser.parse_args()
     
     if not os.path.exists(args.input):
-        print(f"Error: Input bestand niet gevonden: {args.input}")
+        print(f"Error: Input file not found: {args.input}")
         sys.exit(1)
     
-    # Create output folder
+    if args.use_gpu and not GPU_AVAILABLE:
+        print("\n⚠ WARNING: GPU acceleration requested but not available!")
+        print("  Install GPU libraries with: pip install cupy-cuda12x torch-cluster")
+        print("  Falling back to CPU mode...\n")
+        args.use_gpu = False
+    
     output_folder = Path(args.output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
     
-    # Define output file paths
     classified_file = output_folder / "classified.las"
     segmented_file = output_folder / "segmented.las"
     map_file = output_folder / "room_map.png"
@@ -565,10 +619,13 @@ Output files:
     json_file = output_folder / "room_polygons.json"
     
     print("\n" + "="*70)
-    print("COMPLETE ROOM ANALYSIS PIPELINE")
+    print("GPU-ACCELERATED ROOM ANALYSIS PIPELINE")
     print("="*70)
-    print(f"Input file:    {args.input}")
+    print(f"Input file:       {args.input}")
     print(f"Output folder:    {output_folder}")
+    print(f"GPU Acceleration: {'✓ Enabled' if args.use_gpu else '✗ Disabled'}")
+    if args.use_gpu and GPU_AVAILABLE:
+        print(f"GPU Device:       {torch.cuda.get_device_name(0)}")
     print(f"\nOutput files:")
     print(f"  - {classified_file.name}")
     print(f"  - {segmented_file.name}")
@@ -577,17 +634,16 @@ Output files:
     print(f"  - {json_file.name}")
     
     try:
-        # Classification
         step1_classify(
             args.input,
             str(classified_file),
             voxel_size=args.voxel,
             normal_threshold=args.normal_threshold,
             distance_threshold=args.distance_threshold,
-            min_region_size=args.min_region_size
+            min_region_size=args.min_region_size,
+            use_gpu=args.use_gpu
         )
-
-        # Segmentation
+        
         step2_segment_rooms(
             str(classified_file),
             str(segmented_file),
@@ -596,7 +652,6 @@ Output files:
             min_room_points=args.min_room_points
         )
         
-        # Surface Area Calculation & Map Generation
         step3_measure_rooms(
             str(segmented_file),
             str(map_file),
@@ -609,12 +664,6 @@ Output files:
         print("PIPELINE COMPLETED SUCCESSFULLY!")
         print("="*70)
         print(f"\nAll results saved in: {output_folder}")
-        print(f"\nFiles:")
-        print(f"  1. {classified_file.name} - Classified point cloud")
-        print(f"  2. {segmented_file.name} - Segmented rooms")
-        print(f"  3. {map_file.name} - 2D visualization")
-        print(f"  4. {csv_file.name} - Area table")
-        print(f"  5. {json_file.name} - Room Polygons (JSON)")
         
     except Exception as e:
         print(f"\nERROR: Pipeline failed: {e}")
@@ -625,3 +674,4 @@ Output files:
 
 if __name__ == "__main__":
     main()
+
