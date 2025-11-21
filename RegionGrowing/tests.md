@@ -6,7 +6,7 @@ PowerShell-ready commands for testing all room analysis scripts. All commands as
 
 - **`complete_room_analysis.py`** - Point-based (KD-Tree), tests noise threshold (min-region-size)
 - **`complete_room_analysis_gpu.py`** - GPU-Accelerated point-based (fastest with NVIDIA GPU)
-- **`complete_room_analysis_octree.py`** - Octree-based with research enhancements (slowest, highest accuracy)
+- **`complete_room_analysis_octree.py`** - Octree-based with research enhancements (slowest, highest accuracy) - DEFECTED AND REMOVED
 - **`complete_room_analysis_hybrid.py`** - Hybrid (Octree → Point-based → RANSAC), balanced speed/accuracy
 - **`complete_room_analysis_advanced.py`** - Advanced (all features + room classification)
 
@@ -112,64 +112,11 @@ py -3.11 complete_room_analysis_gpu.py appartement.las output_gpu_cpu --no-gpu -
 
 ---
 
-## 3. Octree Script (complete_room_analysis_octree.py)
-
-**Focus: Accuracy and Research Features**
-
-### Test 2.1: Medium Dataset (Balanced)
-**Purpose**: Standard configuration for medium-sized apartment scans
-
-```powershell
-py -3.11 complete_room_analysis_octree.py appartement.las output_octree_T1 --voxel 0.015 --max-depth 10 --residual-threshold 0.04 --curvature-threshold 0.08 --angle-threshold 9.0 --min-room-points 5000 --filter-outlier --improve-boundaries --measure-grid-size 0.05
-```
-
-**Processing Time**: ~2-6 hours for 2.7M points  
-**Expected Results**: High accuracy, detailed segmentation
-
-### Test 2.2: Fast Configuration (Lower Depth)
-**Purpose**: Faster processing with reduced octree depth
-
-```powershell
-py -3.11 RegionGrowing\complete_room_analysis_octree.py RegionGrowing\appartement.las output_octree_T2 `
-  --voxel 0.02 `
-  --max-depth 9 `
-  --residual-threshold 0.05 `
-  --curvature-threshold 0.1 `
-  --angle-threshold 10.0 `
-  --min-room-points 6000 `
-  --measure-grid-size 0.055
-```
-
-**Processing Time**: ~1-3 hours for 2.7M points  
-**Expected Results**: Good accuracy, faster processing
-
-### Test 2.3: Maximum Accuracy (High Depth)
-**Purpose**: Maximum accuracy with highest octree depth (very slow)
-
-```powershell
-py -3.11 RegionGrowing\complete_room_analysis_octree.py RegionGrowing\appartement.las output_octree_T3 `
-  --voxel 0.01 `
-  --max-depth 11 `
-  --residual-threshold 0.03 `
-  --curvature-threshold 0.06 `
-  --angle-threshold 8.0 `
-  --min-room-points 4000 `
-  --filter-outliers `
-  --improve-boundaries `
-  --measure-grid-size 0.04
-```
-
-**Processing Time**: ~4-12+ hours for 2.7M points (Phase B can take many hours)  
-**Expected Results**: Highest accuracy, finest detail  
-**Warning**: Phase B refinement is very slow with high depth and many segments
-
----
-
-## 4. Hybrid Script (complete_room_analysis_hybrid.py)
+## 3. Hybrid Script (complete_room_analysis_hybrid.py)
 
 **Focus: Balanced Speed and Accuracy**
 
-### Test 4.1: Fast Hybrid (Recommended for Most Users)
+### Test 3.1: Fast Hybrid (Recommended for Most Users)
 **Purpose**: Optimal speed/accuracy balance for production use
 
 ```powershell
@@ -185,7 +132,7 @@ py -3.11 RegionGrowing\complete_room_analysis_hybrid.py RegionGrowing\appartemen
 **Processing Time**: ~1-3 hours for 2.7M points  
 **Expected Results**: Good accuracy, much faster than octree-only script
 
-### Test 4.2: Balanced Hybrid (Default Configuration)
+### Test 3.2: Balanced Hybrid (Default Configuration)
 **Purpose**: Standard hybrid configuration with all phases enabled
 
 ```powershell
@@ -195,7 +142,7 @@ py -3.11 complete_room_analysis_hybrid.py appartement.las output_hybrid_T2 --vox
 **Processing Time**: ~2-4 hours for 2.7M points  
 **Expected Results**: High accuracy with gap filling and RANSAC refinement
 
-### Test 4.3: Maximum Accuracy Hybrid (All Features)
+### Test 3.3: Maximum Accuracy Hybrid (All Features)
 **Purpose**: Maximum accuracy with strict parameters
 
 ```powershell
@@ -213,7 +160,7 @@ py -3.11 RegionGrowing\complete_room_analysis_hybrid.py RegionGrowing\appartemen
 **Processing Time**: ~3-6 hours for 2.7M points  
 **Expected Results**: Maximum accuracy with all refinement phases
 
-### Test 4.4: GPU-Accelerated Hybrid (Fast) 🚀
+### Test 3.4: GPU-Accelerated Hybrid (Fast) 🚀
 **Purpose**: GPU-accelerated hybrid for maximum speed
 
 ```powershell
@@ -224,7 +171,7 @@ py -3.11 complete_room_analysis_hybrid_gpu.py appartement.las output_hybrid_gpu_
 **GPU Memory**: ~3-5 GB VRAM usage  
 **Speedup**: Phase 2 gap filling and Phase 3 RANSAC accelerated
 
-### Test 4.5: GPU-Accelerated Hybrid (Maximum Accuracy) 🚀
+### Test 3.5: GPU-Accelerated Hybrid (Maximum Accuracy) 🚀
 **Purpose**: GPU-accelerated with strict parameters
 
 ```powershell
@@ -237,11 +184,11 @@ py -3.11 complete_room_analysis_hybrid_gpu.py appartement.las output_hybrid_gpu_
 
 ---
 
-## 5. Advanced Script (complete_room_analysis_advanced.py)
+## 4. Advanced Script (complete_room_analysis_advanced.py)
 
 **Focus: Full Features with Room Classification**
 
-### Test 5.1: Standard Advanced (Recommended)
+### Test 4.1: Standard Advanced (Recommended)
 **Purpose**: Full feature set with attachment detection, door frames, and room classification
 
 ```powershell
@@ -296,7 +243,7 @@ py -3.11 RegionGrowing\complete_room_analysis_advanced.py RegionGrowing\appartem
 **Processing Time**: ~3-6 hours for 2.7M points  
 **Expected Results**: Production-quality results with all features and maximum accuracy
 
-### Test 5.4: GPU-Accelerated Advanced (Fast) 🚀🔥
+### Test 4.4: GPU-Accelerated Advanced (Fast) 🚀🔥
 **Purpose**: GPU-accelerated advanced with MASSIVE attachment detection speedup
 
 ```powershell
@@ -308,7 +255,7 @@ py -3.11 complete_room_analysis_advanced_gpu.py appartement.las output_advanced_
 **CRITICAL SPEEDUP**: Attachment detection (150k-600k KDTree queries) accelerated 10-50x  
 **Best for**: Production use with RTX 4080 or better
 
-### Test 5.5: GPU-Accelerated Advanced (Maximum Features) 🚀🔥
+### Test 4.5: GPU-Accelerated Advanced (Maximum Features) 🚀🔥
 **Purpose**: All features with GPU acceleration and strict parameters
 
 ```powershell
