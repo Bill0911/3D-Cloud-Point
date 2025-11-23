@@ -1,0 +1,18 @@
+classification:
+  voxel_size: 0.02
+  normal_threshold: 0.7
+  distance_threshold: 0.15
+  min_region_size: 500
+  max_z_diff: null
+  floor_pct: 1.0
+  ceil_pct: 99.0
+
+segmentation:
+  grid_size: 0.01
+  dilation_iterations: 3
+  min_room_points: 5000
+
+measurement:
+  grid_size: 0.05
+  min_cells_per_room: 5
+  ceiling_only: true
