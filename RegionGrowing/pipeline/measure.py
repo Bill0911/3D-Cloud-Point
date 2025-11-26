@@ -5,7 +5,6 @@ import json
 import matplotlib.pyplot as plt
 from shapely.geometry import MultiPoint, Polygon
 from shapely.ops import unary_union
-
 from scipy.ndimage import binary_dilation
 
 
@@ -51,9 +50,7 @@ def build_grid(points_xy, room_ids, cell_size):
             gx = cidx % w
             grid[gy, gx] = int(rid)
 
-    # light dilation: fills minor holes
     grid = binary_dilation(grid > 0, iterations=1).astype(int) * grid
-
     bounds = (x_min, y_min, x_max, y_max)
     return grid, bounds
 
@@ -72,29 +69,38 @@ def compute_area_stats(grid, cell_size):
     return out
 
 
+# ------------------------
+# FIXED ALPHA SHAPE
+# ------------------------
 def alpha_shape(points, alpha=1.0):
-    if len(points) < 4:
-        return MultiPoint(points).convex_hull
+    pts = np.asarray(points)
+
+    if pts.shape[0] < 4:
+        return MultiPoint(pts).convex_hull
+
     try:
         from shapely.ops import triangulate
-        triangles = triangulate(points)
+        triangles = triangulate(MultiPoint(pts))
         alpha_polygons = [
             tri for tri in triangles
             if tri.area > 0 and tri.length / tri.area < alpha * 10
         ]
         return unary_union(alpha_polygons).convex_hull
     except Exception:
-        return MultiPoint(points).convex_hull
+        return MultiPoint(pts).convex_hull
 
 
+# ------------------------
+# SAFE JSON POLYGONS
+# ------------------------
 def save_json_polygons(stats, grid, bounds, cell, out_path):
     x_min, y_min, _, _ = bounds
-
     data = {"rooms": []}
 
     for rid in sorted(stats.keys()):
         ys, xs = np.where(grid == rid)
         if len(xs) < 6:
+            print(f"Skipping room {rid}: too few grid cells")
             continue
 
         pts = np.column_stack([
@@ -102,10 +108,14 @@ def save_json_polygons(stats, grid, bounds, cell, out_path):
             y_min + ys * cell + (cell / 2)
         ])
 
-        hull = alpha_shape(MultiPoint(pts), alpha=1.1)
+        hull = alpha_shape(pts, alpha=1.1)
 
-        if not isinstance(hull, Polygon):
-            hull = hull.convex_hull
+        if not isinstance(hull, Polygon) or hull.area == 0:
+            hull = MultiPoint(pts).convex_hull
+
+        if not isinstance(hull, Polygon) or hull.area == 0:
+            print(f"Skipping room {rid}: invalid hull geometry")
+            continue
 
         coords = [[float(round(a, 3)), float(round(b, 3))]
                   for a, b in hull.exterior.coords]
@@ -177,7 +187,6 @@ def run_measurement(segmented_file, png_out, csv_out, json_out, cfg):
     grid, bounds = build_grid(pts2d, ids, cfg["grid_size"])
     stats = compute_area_stats(grid, cfg["grid_size"])
 
-    # remove tiny junk rooms
     min_cells = cfg["min_cells_per_room"]
     for rid in list(stats.keys()):
         if stats[rid]["pixel_count"] < min_cells:

@@ -31,17 +31,34 @@ def save_las_with_classification(path, points, labels, src_header):
 
 
 def save_las_with_room_ids(las, room_ids, output_path):
+    # Ensure correct length
+    if len(room_ids) != len(las.x):
+        raise ValueError(
+            f"room_ids length mismatch: {len(room_ids)} vs {len(las.x)} points"
+        )
+
+    # Add extra dims if needed
     if "room_id" not in las.point_format.extra_dimension_names:
-        las.add_extra_dim(laspy.ExtraBytesParams(
-            name="room_id", type="u2", description="Room ID"
-        ))
+        las.add_extra_dim(
+            laspy.ExtraBytesParams(
+                name="room_id",
+                type="u2",
+                description="Room ID"
+            )
+        )
 
     if "room_class" not in las.point_format.extra_dimension_names:
-        las.add_extra_dim(laspy.ExtraBytesParams(
-            name="room_class", type="u2", description="Room Class"
-        ))
+        las.add_extra_dim(
+            laspy.ExtraBytesParams(
+                name="room_class",
+                type="u2",
+                description="Room Class"
+            )
+        )
 
+    # Assign values
     las.room_id = room_ids.astype(np.uint16)
+
     las.room_class = np.where(
         room_ids > 0,
         700 + room_ids,

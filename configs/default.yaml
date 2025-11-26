@@ -1,5 +1,5 @@
 classification:
-  voxel_size: 0.01
+  voxel_size: 0.02
   angle_threshold: 15
   distance_threshold: 0.15
   min_region_size: 500
@@ -8,9 +8,10 @@ classification:
   ceil_pct: 99.0
 
 segmentation:
-  grid_size: 0.01
+  grid_size: 0.05
   dilation_iterations: 3
-  min_room_points: 5000
+  ceil_dilation: 2
+  min_room_points: 500
 
 measurement:
   grid_size: 0.05
