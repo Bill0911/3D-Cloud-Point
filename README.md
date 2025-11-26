@@ -8,5 +8,5 @@ The output of the new "Ceiling Projection Strategy" with RANSAC (using original 
 ![Ceiling_detection_surface_area Result](ceiling_surface_area.png)
 
 
-#### Classify rooms of the apartment with Vector Normalization
-![Rooms_classificationResult](room_detection.png)
+#### Classify rooms of the apartment with Vector Normalization using 5mm las file
+![Rooms_classificationResult](normals.png)
