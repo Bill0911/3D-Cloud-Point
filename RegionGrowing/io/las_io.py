@@ -1,65 +1,51 @@
 import laspy
 import numpy as np
 
-# Load only XYZ
 def load_las_points(path):
     las = laspy.read(path)
     pts = np.vstack((las.x, las.y, las.z)).T
-    return pts
+    return pts, las.header
 
-# Load XYZ + classification
+
 def load_las_with_classification(path):
     las = laspy.read(path)
+    pts = np.vstack((las.x, las.y, las.z)).T
+    cls = np.asarray(las.classification, dtype=np.uint8)
+    return las, pts, cls
 
-    if "classification" not in las.point_format.dimension_names:
-        raise RuntimeError(f"LAS file {path} has no 'classification' field")
 
-    points = np.vstack((las.x, las.y, las.z)).T
-    classification = np.asarray(las.classification, dtype=np.uint8)
+def save_las_with_classification(path, points, labels, src_header):
+    header = laspy.LasHeader(
+        point_format=src_header.point_format.id,
+        version=src_header.version
+    )
+    header.scales = src_header.scales
+    header.offsets = src_header.offsets
 
-    return las, points, classification
-
-# Save downsampled LAS with classification labels
-def save_las_with_classification(path, points, labels):
-    header = laspy.LasHeader(point_format=3, version="1.4")
     las = laspy.LasData(header)
-
     las.x = points[:, 0]
     las.y = points[:, 1]
     las.z = points[:, 2]
     las.classification = labels.astype(np.uint8)
-
     las.write(path)
 
-# Save LAS with room_id + room_class assigned to ceiling points
-def save_las_with_room_ids(las, ceiling_mask, room_ids, path):
-    # Add extra dimensions if missing
-    extra = set(las.point_format.extra_dimension_names)
 
-    if "room_id" not in extra:
-        las.add_extra_dim(
-            laspy.ExtraBytesParams(
-                name="room_id",
-                type="u2",
-                description="Room ID"
-            )
-        )
+def save_las_with_room_ids(las, room_ids, output_path):
+    if "room_id" not in las.point_format.extra_dimension_names:
+        las.add_extra_dim(laspy.ExtraBytesParams(
+            name="room_id", type="u2", description="Room ID"
+        ))
 
-    if "room_class" not in extra:
-        las.add_extra_dim(
-            laspy.ExtraBytesParams(
-                name="room_class",
-                type="u2",
-                description="Room Class (700 + room_id)"
-            )
-        )
+    if "room_class" not in las.point_format.extra_dimension_names:
+        las.add_extra_dim(laspy.ExtraBytesParams(
+            name="room_class", type="u2", description="Room Class"
+        ))
 
-    # Init arrays
-    las.room_id = np.zeros(len(las.points), dtype=np.uint16)
-    las.room_class = np.zeros(len(las.points), dtype=np.uint16)
+    las.room_id = room_ids.astype(np.uint16)
+    las.room_class = np.where(
+        room_ids > 0,
+        700 + room_ids,
+        0
+    ).astype(np.uint16)
 
-    # Assign only to ceiling points
-    las.room_id[ceiling_mask] = room_ids
-    las.room_class[ceiling_mask] = np.where(room_ids > 0, 700 + room_ids, 0)
-
-    las.write(path)
+    las.write(output_path)

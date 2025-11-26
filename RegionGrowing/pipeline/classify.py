@@ -58,7 +58,7 @@ def _classify_region(region_points, region_normals, z_stats):
 def run_classification(input_file, output_file, cfg):
     print("STEP 1: Classification")
 
-    pts = load_las_points(input_file)
+    pts, src_header = load_las_points(input_file)
     print(f"Loaded {len(pts)} points")
 
     pcd = o3d.geometry.PointCloud()
@@ -153,7 +153,7 @@ def run_classification(input_file, output_file, cfg):
     after = np.sum(labels == 6)
     print(f"Walls: {before} → {after}")
 
-    save_las_with_classification(output_file, points, labels)
+    save_las_with_classification(output_file, points, labels, src_header)
     print(f"Saved -> {output_file}")
 
     return {
