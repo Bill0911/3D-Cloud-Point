@@ -10,9 +10,12 @@ def load_las_points(path):
 def load_las_with_classification(path):
     las = laspy.read(path)
     pts = np.vstack((las.x, las.y, las.z)).T
+
+    if "classification" not in las.point_format.dimension_names:
+        raise RuntimeError("LAS file missing 'classification' field")
+
     cls = np.asarray(las.classification, dtype=np.uint8)
     return las, pts, cls
-
 
 def save_las_with_classification(path, points, labels, src_header):
     header = laspy.LasHeader(
@@ -37,8 +40,9 @@ def save_las_with_room_ids(las, room_ids, output_path):
             f"room_ids length mismatch: {len(room_ids)} vs {len(las.x)} points"
         )
 
-    # Add extra dims if needed
-    if "room_id" not in las.point_format.extra_dimension_names:
+    extra = las.point_format.extra_dimension_names
+
+    if "room_id" not in extra:
         las.add_extra_dim(
             laspy.ExtraBytesParams(
                 name="room_id",
@@ -47,22 +51,16 @@ def save_las_with_room_ids(las, room_ids, output_path):
             )
         )
 
-    if "room_class" not in las.point_format.extra_dimension_names:
+    if "room_class" not in extra:
         las.add_extra_dim(
             laspy.ExtraBytesParams(
                 name="room_class",
                 type="u2",
-                description="Room Class"
+                description="Room visual class (700 + id)"
             )
         )
 
-    # Assign values
     las.room_id = room_ids.astype(np.uint16)
-
-    las.room_class = np.where(
-        room_ids > 0,
-        700 + room_ids,
-        0
-    ).astype(np.uint16)
+    las.room_class = np.where(room_ids > 0, 700 + room_ids, 0).astype(np.uint16)
 
     las.write(output_path)
