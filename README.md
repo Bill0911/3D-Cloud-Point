@@ -10,7 +10,7 @@ The output the current Region Growing (using "appartement_SOR_NoiseFiltered_5mm.
 
 ## Clustering / Segmentation
 #### Test if the parameter tuning is working
-#### Results: it proves that all walls are identical every time changing the parameters, shows that the parameter tuning is functional
+#### Results: it proves that all wall's colors are modifying every time the parameter value (e.g., normal_feature_weight) is changed, shows that the parameter tuning is functional
 ![Rooms_segmentationResult](segmentation.png)
 
 ### Parameter Tuning Guide for Pre-processing step.
