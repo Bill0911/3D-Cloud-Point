@@ -2,11 +2,20 @@ The output the current Region Growing (using "appartement_SOR_NoiseFiltered_5mm.
 #### Calculated Area of the entire apartment: 98,2 m²
 ![Room_detection_surface_area Result](regionGrowing_TestResults/room_map.png)
 
-The output of the new "Ceiling Projection Strategy" with RANSAC (using original cloud point las file).
 
-#### Calculated Area of the entire apartment:** 113.75 m²
-![Ceiling_detection_surface_area Result](ceiling_surface_area.png)
-
-
-#### Classify rooms of the apartment with Vector Normalization using 5mm las file
+## Pre-processing testing step with 5mm las file (First checkpoint of the building pipeline)
+#### Quality check if the vector normalization was done correctly
+#### Results: it displays Vector Normalization with walls are labeled as vertical and floors are labeled as horizontal
 ![Rooms_classificationResult](normals.png)
+
+## Clustering / Segmentation
+#### Test if the parameter tuning is working
+#### Results: it proves that all walls are identical every time changing the parameters, shows that the parameter tuning is functional
+![Rooms_segmentationResult](segmentation.png)
+
+### Parameter Tuning Guide for Pre-processing step.
+| Parameter | Function | Increase if | Decrease if |
+| :--- | :--- | :--- | :--- |
+| **Normal Weight** | **Separates Angles:** Controls how strictly the algorithm separates surfaces based on their facing direction. | Floor and walls are merging into the same color/cluster. | Curved objects (like pillars or domes) are "shattering" into many small vertical strips. |
+| **Epsilon** | **Search Radius:** The maximum distance (in spatial + weighted feature space) to search for neighbors. | Valid single objects are breaking into multiple disconnected pieces. | Distinct nearby objects (e.g., a chair touching a table) are merging into one blob. |
+| **Min Points** | **Noise Filter:** The minimum density required to form a valid cluster. | You see too much "dust," floating ghost points, or sparse noise. | You are losing thin details like table legs, pipes, or window frames (they turn black/noise). |
