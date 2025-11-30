@@ -165,7 +165,8 @@ def step1_classify(input_file, output_file, voxel_size=0.02,
     out.z = points_down[:, 2]
     out.classification = classification
     out.write(output_file)
-    print(f"✓ Saved {len(points_down)} classified points")
+    print(f"[OK] Saved {len(points_down)} classified points")
+
 
 
 # ============================================================================
@@ -264,7 +265,7 @@ def step2_segment_rooms(input_file, output_file, grid_size=0.01,
     las.room_class[ceiling_mask] = ceiling_room_class
 
     las.write(output_file)
-    print("✓ Each room's ceiling now has a unique classification (700 + room_id).")
+    print("[OK] Each room's ceiling now has a unique classification (700 + room_id).")
 
 def save_room_polygons_json(room_stats, grid, bounds, grid_size, json_path):
     """Generates a polygon for each room and saves to JSON."""
@@ -293,7 +294,7 @@ def save_room_polygons_json(room_stats, grid, bounds, grid_size, json_path):
 
     with open(json_path, 'w') as f:
         json.dump(output_data, f, indent=2)
-    print(f"✓ Saved room polygons to: {json_path}")
+    print(f"[OK] Saved room polygons to: {json_path}")
 
 
 # ============================================================================
@@ -427,7 +428,7 @@ def plot_map(grid, bounds, room_stats, output_image, cmap_name="tab20"):
         cell_x = x_min + (mean_col + 0.5) * ((x_max - x_min) / width)
         cell_y = y_min + (mean_row + 0.5) * ((y_max - y_min) / grid.shape[0])
         area = room_stats[rid]["area_m2"]
-        plt.text(cell_x, cell_y, f"{rid}\n{area:.1f} m²", ha="center", va="center",
+        plt.text(cell_x, cell_y, f"{rid}\n{area:.1f} m2", ha="center", va="center",
                  fontsize=8, bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
 
     plt.tight_layout()
@@ -463,17 +464,17 @@ def step3_measure_rooms(input_file, output_image, csv_path, json_path, grid_size
     grid, room_stats, bounds = compute_room_areas(points_xy, room_ids, grid_size)
 
     save_csv(room_stats, csv_path)
-    print(f"✓ Wrote CSV to: {csv_path}")
+    print(f"[OK] Wrote CSV to: {csv_path}")
 
     save_room_polygons_json(room_stats, grid, bounds, grid_size, json_path)
 
     print(f"Plotting map to {output_image}...")
     plot_map(grid, bounds, room_stats, output_image)
-    print(f"✓ Saved map image to {output_image}")
+    print(f"[OK] Saved map image to {output_image}")
 
-    print("\nRoom areas (m²):")
+    print("\nRoom areas (m2):")
     for rid in sorted(room_stats.keys()):
-        print(f"  Room {rid}: {room_stats[rid]['area_m2']:.3f} m²  ({room_stats[rid]['pixel_count']} cells)")
+        print(f"  Room {rid}: {room_stats[rid]['area_m2']:.3f} m2  ({room_stats[rid]['pixel_count']} cells)")
 
 
 # ============================================================================

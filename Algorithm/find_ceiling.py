@@ -68,7 +68,7 @@ def calculate_ceiling_area(las_file_path, output_json="ceiling_results.json"):
     pixel_count = np.sum(processed_grid)
     area_m2 = pixel_count * (grid_size * grid_size)
     
-    print(f"\n✅ FINAL CALCULATION:")
+    print(f"\n[OK] FINAL CALCULATION:")
     print(f"   Service Area: {area_m2:.2f} square meters")
     
     result_data = {
@@ -83,7 +83,7 @@ def calculate_ceiling_area(las_file_path, output_json="ceiling_results.json"):
     print(f"   Saved JSON: {output_json}")
 
     plt.figure(figsize=(10, 10))
-    plt.title(f"Ceiling Projection (Area: {area_m2:.2f} m²)")
+    plt.title(f"Ceiling Projection (Area: {area_m2:.2f} m2)")
     plt.imshow(processed_grid, origin='lower', cmap='Greys_r')
     plt.colorbar(label='Occupancy')
     plt.show()
