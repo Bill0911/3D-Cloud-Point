@@ -1,5 +1,5 @@
 #### Challenging: Room segmentation
-* The team is trying to solve the Room Segmentation that is currently challenging as the algorithm cannot identify rooms in the apartment, also we are trying to find a 'sweet spot' with hopes to solve this problem.
+* The team is trying to solve the Room Segmentation that is currently challenging as the algorithm cannot identify rooms in the apartment, also we are trying to find a 'sweet spot' with hopes to solve this problem. Another issue is still the kitchen island which supposes to be fill up that leaves the white gaps between room2 and room3. All in all, any furnitures (which are currently kitchens, doors) should be ignored
 ![Room_segmentation Result](segmentation_hull.png)
 
 
