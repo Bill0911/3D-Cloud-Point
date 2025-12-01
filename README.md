@@ -1,3 +1,8 @@
+#### Challenging: Room segmentation
+* The team is trying to solve the Room Segmentation that is currently challenging as the algorithm cannot identify rooms in the apartment, also we are trying to find a 'sweet spot' with hopes to solve this problem.
+![Room_segmentation Result](segmentation_hull.png)
+
+
 The output the current Region Growing (using "appartement_SOR_NoiseFiltered_5mm.las")
 #### Calculated Area of the entire apartment: 98,2 m²
 ![Room_detection_surface_area Result](regionGrowing_TestResults/room_map.png)

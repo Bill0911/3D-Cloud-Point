@@ -15,6 +15,9 @@ import csv
 import json
 from shapely.geometry import MultiPoint
 from scipy.ndimage import binary_closing, label
+from scipy.ndimage import distance_transform_edt
+from skimage.segmentation import watershed
+from skimage.feature import peak_local_max
 
 
 # ============================================================================
@@ -169,133 +172,130 @@ def step1_classify(input_file, output_file, voxel_size=0.02,
 
 
 # ============================================================================
-# Room Segmentation
+# CHECKPOINT 2: ROOM SEGMENTATION (Watershed - The Fix)
 # ============================================================================
+# Make sure to import these at the top of your file:
+# from scipy.ndimage import distance_transform_edt
+# from skimage.segmentation import watershed
+# from skimage.feature import peak_local_max
 
-def step2_segment_rooms(input_file, output_file, grid_size=0.01, 
-                        dilation_iterations=3, min_room_points=5000):
+def step2_segment_rooms(input_file, output_file, grid_size=0.05, 
+                        dilation_iterations=3, min_room_points=500): # <--- Lowered this to find the missing room
     print("\n" + "="*70)
-    print("CHECKPOINT 2: ROOM SEGMENTATION")
+    print("CHECKPOINT 2: ROOM SEGMENTATION (Watershed Method)")
     print("="*70)
     
     print(f"Reading classified point cloud from {input_file}...")
     las = laspy.read(input_file)
     points = np.vstack((las.x, las.y, las.z)).T
     classification = np.array(las.classification)
-    print(f"Loaded {len(points)} points.")
-
-    wall_mask = classification == 6
+    
+    # 1. SLICE WALLS (Robust Slice)
+    z_min = np.min(points[:, 2])
+    # Slice between 0.5m and 2.0m to catch the main wall structure
+    wall_mask = (classification == 6) & (points[:, 2] > z_min + 0.5) & (points[:, 2] < z_min + 2.0)
     ceiling_mask = classification == 7
-
-    z_min_wall_height = 1.5
-    high_wall_mask = wall_mask & (points[:, 2] > z_min_wall_height)
-
-    wall_points = points[high_wall_mask]
+    
+    wall_points = points[wall_mask]
     ceiling_points = points[ceiling_mask]
     
-    if len(wall_points) == 0 or len(ceiling_points) == 0:
-        print("Error: No wall or ceiling points found.")
-        return
+    print(f"Using {len(wall_points)} wall points for segmentation.")
 
-    print(f"Found {len(wall_points)} wall points and {len(ceiling_points)} ceiling points.")
-
+    # 2. CREATE 2D GRID
     x_min, y_min = np.min(points[:, :2], axis=0)
     x_max, y_max = np.max(points[:, :2], axis=0)
+    
+    # Use the grid_size passed in arguments (Recommend 0.05)
     grid_width = int(np.ceil((x_max - x_min) / grid_size))
     grid_height = int(np.ceil((y_max - y_min) / grid_size))
+    
     occupancy_grid = np.zeros((grid_height, grid_width), dtype=np.uint8)
-
+    
     wall_x = ((wall_points[:, 0] - x_min) / grid_size).astype(int)
     wall_y = ((wall_points[:, 1] - y_min) / grid_size).astype(int)
+    
+    # Clip to bounds
     wall_x = np.clip(wall_x, 0, grid_width - 1)
     wall_y = np.clip(wall_y, 0, grid_height - 1)
-    occupancy_grid[wall_y, wall_x] = 1
+    
+    occupancy_grid[wall_y, wall_x] = 1 # Walls are 1
 
-    dilated_grid = binary_dilation(occupancy_grid, iterations=dilation_iterations)
-    structure = np.ones((3, 3), dtype=int)
-    room_labels, num_labels = label(1 - dilated_grid, structure=structure)
-    print(f"Initially found {num_labels} potential room regions.")
+    # 3. WATERSHED LOGIC (Fixes the Merged Room Problem)
+    print("Running Watershed Segmentation...")
+    
+    # A. Distance Map: Calculate distance from every empty pixel to the nearest wall
+    dist_transform = distance_transform_edt(1 - occupancy_grid)
+    
+    # B. Find Peaks (Centers of Rooms)
+    # REMOVED 'indices=False' because it is deprecated. 
+    # This now returns a list of coordinates [[r, c], ...].
+    local_maxi = peak_local_max(dist_transform, min_distance=8, labels=(1-occupancy_grid))
+    
+    # NEW STEP: Convert coordinates back to a Boolean Mask
+    local_maxi_mask = np.zeros_like(dist_transform, dtype=bool)
+    if len(local_maxi) > 0:
+        local_maxi_mask[tuple(local_maxi.T)] = True
 
+    # C. Create Markers
+    from scipy.ndimage import label
+    # Now we pass the boolean mask to label(), not the raw coordinates
+    markers = label(local_maxi_mask)[0]
+    
+    # D. Run Watershed
+    room_labels_grid = watershed(-dist_transform, markers, mask=(1-occupancy_grid))
+    
+    num_labels = room_labels_grid.max()
+    print(f"Watershed found {num_labels} potential regions.")
+
+    # 4. MAP TO 3D & FILTER (Fixes the Missing Room Problem)
     ceil_x = ((ceiling_points[:, 0] - x_min) / grid_size).astype(int)
     ceil_y = ((ceiling_points[:, 1] - y_min) / grid_size).astype(int)
     ceil_x = np.clip(ceil_x, 0, grid_width - 1)
     ceil_y = np.clip(ceil_y, 0, grid_height - 1)
-    point_room_labels = room_labels[ceil_y, ceil_x]
+    
+    point_room_labels = room_labels_grid[ceil_y, ceil_x]
 
     unique_labels, counts = np.unique(point_room_labels, return_counts=True)
     valid_rooms = 0
     final_room_id_map = {}
+    
+    print("\nFiltering rooms by size...")
     for room_id, count in zip(unique_labels, counts):
-        if room_id == 0:
-            continue
+        if room_id == 0: continue
+        
+        # We lowered the threshold to catch the small missing room
         if count >= min_room_points:
             valid_rooms += 1
             final_room_id_map[room_id] = valid_rooms
-            print(f"  Room {valid_rooms} (Orig ID: {room_id}) has {count} points. [VALID]")
         else:
-            print(f"  Region (ID: {room_id}) has {count} points. [REMOVED]")
+            # Print what we are deleting to debug
+            print(f"  Deleted tiny region {room_id} ({count} points) - likely noise.")
+            
+    print(f"Found {valid_rooms} VALID rooms.")
 
+    # Apply mapping
     final_point_labels = np.zeros_like(point_room_labels)
     for original_id, final_id in final_room_id_map.items():
         final_point_labels[point_room_labels == original_id] = final_id
 
-    
-
-    print(f"\nFound {valid_rooms} valid rooms.")
-
+    # 5. SAVE
     print(f"Saving segmented point cloud to {output_file}...")
-    las.add_extra_dim(laspy.ExtraBytesParams(
-        name="room_id",
-        type="u2",
-        description="Room ID"
-    ))
-    las.add_extra_dim(laspy.ExtraBytesParams(
-        name="room_class",
-        type="u2",
-        description="Room ceiling class"
-    ))
+    try:
+        las.add_extra_dim(laspy.ExtraBytesParams(name="room_id", type="u2"))
+        las.add_extra_dim(laspy.ExtraBytesParams(name="room_class", type="u2"))
+    except: pass
 
     las.room_id = np.zeros(len(las.points), dtype=np.uint16)
     las.room_class = np.zeros(len(las.points), dtype=np.uint16)
 
     las.room_id[ceiling_mask] = final_point_labels
-
+    
+    # Color logic
     ceiling_room_class = np.where(final_point_labels > 0, 700 + final_point_labels, 0)
     las.room_class[ceiling_mask] = ceiling_room_class
 
     las.write(output_file)
-    print("✓ Each room's ceiling now has a unique classification (700 + room_id).")
-
-def save_room_polygons_json(room_stats, grid, bounds, grid_size, json_path):
-    """Generates a polygon for each room and saves to JSON."""
-    print(f"Generating floor polygons for JSON...")
-    x_min, y_min, _, _ = bounds
-    
-    output_data = {"rooms": []}
-
-    for rid in sorted(room_stats.keys()):
-        rows, cols = np.where(grid == rid)
-        if len(rows) < 3: continue
-
-        real_x = x_min + (cols * grid_size) + (grid_size / 2)
-        real_y = y_min + (rows * grid_size) + (grid_size / 2)
-        points = list(zip(real_x, real_y))
-        
-        hull = MultiPoint(points).convex_hull
-        if hull.geom_type == 'Polygon':
-            coords = list(hull.exterior.coords)
-            room_data = {
-                "room_id": int(rid),
-                "area_sqm": room_stats[rid]["area_m2"],
-                "polygon_coordinates": [[round(x, 3), round(y, 3)] for x, y in coords]
-            }
-            output_data["rooms"].append(room_data)
-
-    with open(json_path, 'w') as f:
-        json.dump(output_data, f, indent=2)
-    print(f"✓ Saved room polygons to: {json_path}")
-
-
+    print("✓ Segmentation done.")
 # ============================================================================
 # Room Area Calculation & Map Generation
 # ============================================================================
@@ -434,6 +434,38 @@ def plot_map(grid, bounds, room_stats, output_image, cmap_name="tab20"):
     plt.savefig(output_image, dpi=300)
     plt.close()
 
+def save_room_polygons_json(room_stats, grid, bounds, grid_size, json_path):
+    """Generates a polygon for each room and saves to JSON."""
+    print(f"Generating floor polygons for JSON...")
+    x_min, y_min, _, _ = bounds
+    
+    output_data = {"rooms": []}
+
+    for rid in sorted(room_stats.keys()):
+        # Find all grid cells belonging to this room
+        rows, cols = np.where(grid == rid)
+        if len(rows) < 3: continue # Need at least 3 points for a polygon
+
+        # Convert grid coordinates back to real-world coordinates
+        real_x = x_min + (cols * grid_size) + (grid_size / 2)
+        real_y = y_min + (rows * grid_size) + (grid_size / 2)
+        points = list(zip(real_x, real_y))
+        
+        # Calculate Convex Hull (Rubber band around the room)
+        hull = MultiPoint(points).convex_hull
+        
+        if hull.geom_type == 'Polygon':
+            coords = list(hull.exterior.coords)
+            room_data = {
+                "room_id": int(rid),
+                "area_sqm": room_stats[rid]["area_m2"],
+                "polygon_coordinates": [[round(x, 3), round(y, 3)] for x, y in coords]
+            }
+            output_data["rooms"].append(room_data)
+
+    with open(json_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    print(f"✓ Saved room polygons to: {json_path}")
 
 def step3_measure_rooms(input_file, output_image, csv_path, json_path, grid_size=0.05):
     print("\n" + "="*70)
@@ -554,28 +586,27 @@ Output files:
     
     try:
         # Classification
-        step1_classify(
-            args.input,
-            str(classified_file),
-            voxel_size=args.voxel,
-            normal_threshold=args.normal_threshold,
-            distance_threshold=args.distance_threshold,
-            min_region_size=args.min_region_size
-        )
-
-        print("Skipping Step 1 (using existing classified.las)...")
+        # print("Skipping Step 1...")  <--- You can comment this out
+        # step1_classify(              <--- COMMENT THIS BLOCK OUT
+        #     args.input,
+        #     str(classified_file),
+        #     voxel_size=args.voxel,
+        #     normal_threshold=args.normal_threshold,
+        #     distance_threshold=args.distance_threshold,
+        #     min_region_size=args.min_region_size
+        # )
 
         # Segmentation
-        step2_segment_rooms(
-            str(classified_file),
-            str(segmented_file),
-            grid_size=args.grid_size,
-            dilation_iterations=args.dilation_iterations,
-            min_room_points=args.min_room_points
-        )
+        # step2_segment_rooms(         <--- COMMENT THIS BLOCK OUT
+        #     str(classified_file),
+        #     str(segmented_file),
+        #     grid_size=args.grid_size,
+        #     dilation_iterations=args.dilation_iterations,
+        #     min_room_points=args.min_room_points
+        # )
         
         # Surface Area Calculation & Map Generation
-        step3_measure_rooms(
+        step3_measure_rooms(           # <--- KEEP THIS ONE!
             str(segmented_file),
             str(map_file),
             str(csv_file),
