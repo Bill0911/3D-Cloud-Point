@@ -1,6 +1,6 @@
-#### Challenging: Room segmentation
-* The team is trying to solve the Room Segmentation that is currently challenging as the algorithm cannot identify rooms in the apartment, also we are trying to find a 'sweet spot' with hopes to solve this problem. Another issue is still the kitchen island which supposes to be fill up that leaves the white gaps between room2 and room3. All in all, any furnitures (which are currently kitchens, doors) should be ignored
-![Room_segmentation Result](segmentation_hull.png)
+#### Room segmentation (Progress Update)
+* The team is trying to solve the Room Segmentation that is currently challenging as the algorithm cannot identify rooms in the apartment, a 'sweet spot' has been found with hopes to solve this problem. Another issue is that the room 1 is half-visible and some 'phantom' rooms are found on the bottom-left of the apartment. These are being solved and removed.
+![Room_segmentation Result](segmentation_thin_slice.png)
 
 
 The output the current Region Growing (using "appartement_SOR_NoiseFiltered_5mm.las")
@@ -16,7 +16,7 @@ The output the current Region Growing (using "appartement_SOR_NoiseFiltered_5mm.
 ## Clustering / Segmentation
 #### Test if the parameter tuning is working
 #### Results: it proves that all wall's colors are modifying every time the parameter value (e.g., normal_feature_weight) is changed, shows that the parameter tuning is functional
-![Rooms_segmentationResult](segmentation.png)
+![Rooms_segmentationResult](angle_segmentation.png)
 
 ### Parameter Tuning Guide for Pre-processing step.
 | Parameter | Function | Increase if | Decrease if |
