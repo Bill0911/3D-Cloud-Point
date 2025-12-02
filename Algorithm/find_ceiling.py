@@ -1,9 +1,9 @@
 import laspy
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.ndimage import binary_erosion, label, binary_closing
+from scipy.ndimage import binary_erosion, label, binary_closing, binary_fill_holes
 from skimage.segmentation import watershed
-from skimage.morphology import disk, remove_small_objects, convex_hull_image
+from skimage.morphology import disk, remove_small_objects
 from scipy.ndimage import distance_transform_edt
 import argparse
 import os
@@ -12,21 +12,22 @@ import json
 #-------CONTROL PANEL--------#
 CONFIG = {
     "IO": {
-        "default_input_path": r"C:\Users\dober\Downloads\emit-it_appartement_sor_noise_filtered-laz_2025-11-11_1332\appartement_SOR_NoiseFiltered_5mm.las",
-        "output_image": "segmentation_thin_slice.png",
+        "default_input_path": r"C:\Users\dober\Downloads\emit-it_appartement_sor_noise_filtered-laz_2025-11-11_1332\appartement_SOR.laz",
+        "output_image": "segmentation_shrink_wrap.png",
         "output_json": "room_data.json"
     },
     "SLICING": {
-        # The Wafter Slice Technique
         "ignore_top_cm": 0.06, # KEY (set 0.07 disappears Room 8 and Room 1) 
-        "slice_thickness": 0.185  # KEY (set 0.186 disappears Room 8 (real room))
+        "slice_thickness": 0.185 # KEY (set 0.186 disappears Room 8 (real room))
     },
     "PROCESSING": {
         "voxel_resolution": 0.05, # KEY (0.06 makes a small 'phantom' room in Room 5)
-        "erosion_radius": 0.53, # KEY (0.56 makes several non-sense rooms)
+        "erosion_radius": 0.5, # KEY (0.56 makes several non-sense rooms)
         "grid_padding": 20,
         "min_wall_size_px": 100,
-        "room_polish_radius": 12   
+        "room_polish_radius": 12,
+        
+        "seal_radius_px": 20 
     },
     "VISUALIZATION": {
         "figure_size": (15, 15),
@@ -37,64 +38,53 @@ CONFIG = {
     }
 }
 #--------------------------------#
+
 def find_ceiling_plane(z_coords, bin_size=0.04):
     top_percentile = np.percentile(z_coords, 80)
     high_points = z_coords[z_coords > top_percentile]
-    
     bins = np.arange(np.min(high_points), np.max(high_points), bin_size)
     counts, bin_edges = np.histogram(high_points, bins=bins)
-    
     peak_idx = np.argmax(counts)
-    ceiling_height = bin_edges[peak_idx]
-    
-    return ceiling_height
+    return bin_edges[peak_idx]
 
-def thin_slice_segmentation(input_file, config):
+def segmentation_logic(input_file, config):
     print(f"Processing {input_file}...")
     
     las = laspy.read(input_file)
     points = np.vstack((las.x, las.y, las.z)).T
     
-    print("Detecting ceiling plane...")
     z_ceil = find_ceiling_plane(points[:, 2])
-    print(f"Ceiling Plane Detected at: {z_ceil:.2f}m")
+    print(f"Ceiling Plane: {z_ceil:.2f}m")
     
     z_top = z_ceil - config["SLICING"]["ignore_top_cm"]
     z_bottom = z_top - config["SLICING"]["slice_thickness"]
-    
-    print(f"Slicing from {z_bottom:.2f}m to {z_top:.2f}m (Thickness: {config['SLICING']['slice_thickness']}m)...")
-    
     mask = (points[:, 2] > z_bottom) & (points[:, 2] < z_top)
     slice_points = points[mask]
-    
-    if len(slice_points) == 0:
-        print("WARNING: Thin slice is empty. Falling back to wider search.")
-        z_bottom -= 0.2
-        mask = (points[:, 2] > z_bottom) & (points[:, 2] < z_top)
-        slice_points = points[mask]
 
     res = config["PROCESSING"]["voxel_resolution"]
-    padding = config["PROCESSING"]["grid_padding"]
+    pad = config["PROCESSING"]["grid_padding"]
     
     x_min, y_min = np.min(points[:, 0]), np.min(points[:, 1])
     x_max, y_max = np.max(points[:, 0]), np.max(points[:, 1])
     
-    w = int(np.ceil((x_max - x_min) / res)) + (padding * 2)
-    h = int(np.ceil((y_max - y_min) / res)) + (padding * 2)
+    w = int(np.ceil((x_max - x_min) / res)) + (pad * 2)
+    h = int(np.ceil((y_max - y_min) / res)) + (pad * 2)
     grid = np.zeros((h, w), dtype=bool)
     
-    xi = ((slice_points[:, 0] - x_min) / res).astype(int) + padding
-    yi = ((slice_points[:, 1] - y_min) / res).astype(int) + padding
-    
-    xi = np.clip(xi, 0, w - 1)
-    yi = np.clip(yi, 0, h - 1)
+    xi = ((slice_points[:, 0] - x_min) / res).astype(int) + pad
+    yi = ((slice_points[:, 1] - y_min) / res).astype(int) + pad
     grid[yi, xi] = True
 
     print("Cleaning noise...")
     clean_walls = remove_small_objects(grid, min_size=config["PROCESSING"]["min_wall_size_px"])
 
-    print("Sealing apartment...")
-    apartment_footprint = convex_hull_image(clean_walls)
+    print("Sealing apartment (Shrink Wrap)...")
+    seal_radius = config["PROCESSING"]["seal_radius_px"]
+    
+    closed_structure = binary_closing(clean_walls, disk(seal_radius))
+    
+    apartment_footprint = binary_fill_holes(closed_structure)
+    
     indoor_air = apartment_footprint & ~clean_walls
 
     print("Segmenting...")
@@ -106,18 +96,15 @@ def thin_slice_segmentation(input_file, config):
     room_labels = watershed(-dist, seeds_lbl, mask=indoor_air)
     print(f"Found {n_seeds} rooms.")
 
-    print("Polishing interiors...")
+    print("Polishing...")
     polish_radius = config["PROCESSING"]["room_polish_radius"]
-    
     final_labels = room_labels.copy()
     unique_ids = np.unique(final_labels)
     
     for uid in unique_ids:
         if uid == 0: continue
-        
         room_mask = (final_labels == uid)
         polished = binary_closing(room_mask, disk(polish_radius))
-        
         final_labels[(polished) & (final_labels == 0)] = uid
 
     return clean_walls, final_labels
@@ -163,7 +150,7 @@ def main():
         print(f"Error: {args.input_file} not found.")
         return
 
-    walls, labels = thin_slice_segmentation(args.input_file, CONFIG)
+    walls, labels = segmentation_logic(args.input_file, CONFIG)
     save_results(walls, labels, CONFIG)
 
 if __name__ == "__main__":

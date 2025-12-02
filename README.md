@@ -1,6 +1,6 @@
 #### Room segmentation (Progress Update)
-* The team is trying to solve the Room Segmentation that is currently challenging as the algorithm cannot identify rooms in the apartment, a 'sweet spot' has been found with hopes to solve this problem. Another issue is that the room 1 is half-visible and some 'phantom' rooms are found on the bottom-left of the apartment. These are being solved and removed.
-![Room_segmentation Result](segmentation_thin_slice.png)
+* Trying to approach ceiling instead of the floor, the team tries to slice the room at the very top, so that the furniture is cut off using Wafer Slice technique 
+![Room_segmentation Result](segmentation_shrink_wrap.png)
 
 
 The output the current Region Growing (using "appartement_SOR_NoiseFiltered_5mm.las")
