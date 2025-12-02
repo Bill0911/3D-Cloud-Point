@@ -1,5 +1,5 @@
 #### Room segmentation (Progress Update)
-* Trying to approach ceiling instead of the floor, the team tries to slice the room at the very top, so that the furniture is cut off using Wafer Slice technique 
+* Trying to approach the ceiling instead of the floor, the team tries to slice the room at the very top, so that the furniture is cut off using Wafer Slice technique 
 ![Room_segmentation Result](segmentation_shrink_wrap.png)
 
 
