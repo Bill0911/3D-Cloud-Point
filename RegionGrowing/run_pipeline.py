@@ -21,6 +21,7 @@ def run_pipeline(input_file, output_folder, cfg):
 
     classified_file = output_folder / "classified.las"
     segmented_file = output_folder / "segmented.las"
+
     map_png = output_folder / "room_map.png"
     areas_csv = output_folder / "room_areas.csv"
     polygons_json = output_folder / "room_polygons.json"
@@ -47,13 +48,30 @@ def run_pipeline(input_file, output_folder, cfg):
         print("\nSegmentation failed → stopping.")
         return
 
-    print("\nRunning STEP 3: MEASUREMENT")
+    # 1. Measurement for CEILING
+    print("\nRunning STEP 3A: MEASUREMENT (CEILING)")
+    cfg_ceil = cfg["measurement"].copy()
+    cfg_ceil["ceiling_only"] = True  # Ensure ceiling_only is True
+
     run_measurement(
         segmented_file=str(segmented_file),
-        png_out=str(map_png),
-        csv_out=str(areas_csv),
-        json_out=str(polygons_json),
-        cfg=cfg["measurement"]
+        png_out=str(output_folder / "room_map_ceiling.png"),
+        csv_out=str(output_folder / "room_areas_ceiling.csv"),
+        json_out=str(output_folder / "room_polygons_ceiling.json"),
+        cfg=cfg_ceil
+    )
+
+    # 2. Measurement for FLOOR
+    print("\nRunning STEP 3B: MEASUREMENT (FLOOR)")
+    cfg_floor = cfg["measurement"].copy()
+    cfg_floor["ceiling_only"] = False  # Set ceiling_only to False to use floor/all points
+
+    run_measurement(
+        segmented_file=str(segmented_file),
+        png_out=str(output_folder / "room_map_floor.png"),
+        csv_out=str(output_folder / "room_areas_floor.csv"),
+        json_out=str(output_folder / "room_polygons_floor.json"),
+        cfg=cfg_floor
     )
 
     print("\n" + "=" * 70)

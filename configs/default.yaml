@@ -1,6 +1,6 @@
 classification:
   voxel_size: 0.02
-  angle_threshold: 18
+  angle_threshold: 15
   distance_threshold: 0.20
   min_region_size: 1500
   max_z_diff: null

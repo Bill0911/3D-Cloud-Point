@@ -192,9 +192,14 @@ def run_measurement(segmented_file, png_out, csv_out, json_out, cfg):
     mask = room_ids > 0
 
     # Ceiling-only filtering (using classification = 7)
-    if cfg["ceiling_only"] and hasattr(las, "classification"):
+    if hasattr(las, "classification"):
         cls = np.asarray(las.classification)
-        mask &= (cls == 7)
+
+        if cfg["ceiling_only"]:
+            mask &= (cls == 7)
+
+        else:
+            mask &= (cls == 2)
 
     pts2d = points[mask, :2]
     ids = room_ids[mask]
