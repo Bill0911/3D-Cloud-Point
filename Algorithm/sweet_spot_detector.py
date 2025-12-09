@@ -8,7 +8,7 @@ import time
 
 TEST_VALUES = np.arange(0.15, 0.40, 0.005)
 
-EROSION = 0.30
+EROSION = 0.7
 TOP_CM = 0.05
 RES = 0.05 
 MIN_WALL = 50  
@@ -105,7 +105,7 @@ def run_sweep(input_file):
     print(f"\nSaved graph to: {output}")
 
 if __name__ == "__main__":
-    path = r"C:\Users\dober\Downloads\emit-it_appartement_sor_noise_filtered-laz_2025-11-11_1332\appartement_SOR.laz"
+    path = r"C:\Users\dober\Downloads\emit-it_appartement-variations_2025-12-08_1542\app_unfiltered_cut_out.laz"
     
     if os.path.exists(path):
         run_sweep(path)

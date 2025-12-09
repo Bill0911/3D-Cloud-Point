@@ -18,11 +18,11 @@ CONFIG = {
     },
     "SLICING": {
         "ignore_top_cm": 0.06, # KEY (set 0.07 disappears Room 8 and Room 1) 
-        "slice_thickness": 0.23 # KEY (set 0.186 disappears Room 8 (real room))
+        "slice_thickness": 0.24 # KEY (set 0.186 disappears Room 8 (real room))
     },
     "PROCESSING": {
         "voxel_resolution": 0.05, # KEY (0.06 makes a small 'phantom' room in Room 5)
-        "erosion_radius": 0.3, # KEY (0.56 makes several non-sense rooms)
+        "erosion_radius": 0.27, # KEY (0.56 makes several non-sense rooms)
         "grid_padding": 20,
         "min_wall_size_px": 100,
         "room_polish_radius": 12,
