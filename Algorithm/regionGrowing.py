@@ -576,13 +576,16 @@ Output files:
         )
         
         # Surface Area Calculation & Map Generation
-        step3_measure_rooms(
-            str(segmented_file),
-            str(map_file),
-            str(csv_file),
-            str(json_file),
-            grid_size=args.measure_grid_size
-        )
+        if os.path.exists(str(segmented_file)):
+            step3_measure_rooms(
+                str(segmented_file),
+                str(map_file),
+                str(csv_file),
+                str(json_file),
+                grid_size=args.measure_grid_size
+            )
+        else:
+            print(f"Skipping Step 3: Segmented file not found ({segmented_file})")
         
         print("\n" + "="*70)
         print("PIPELINE COMPLETED SUCCESSFULLY!")
